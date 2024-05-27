@@ -1,2 +1,2 @@
-# demoSite
-SpacyLens client javascript and demo page making use of it
+# demositeSpacyLens
+Example of a web site with objects clickable thanks to SpacyLens
