@@ -22,7 +22,8 @@ export function equipImages (domainId, overrides) {
     document.head.appendChild(style)
     }
 export function cleanup () {
-    hideMagicSlides (false, true)
+    lastTapTime = 0
+    hideMagicSlides (true)
     hideDialog()
     }
 
@@ -40,7 +41,7 @@ let onImgClick
 
 //-- Inlined config:
 let delay1 = 1000
-let delay2 = 3000
+let delay2 = 6000
 let redirectTarget = '_self'
 let magicSlides = (() => { // Maximum 10 slides at a time.
     const result = new Array (10)
@@ -111,17 +112,15 @@ let inlineCSS = `
     `
 //-- Implementation:
 
-function hideMagicSlides (keepActiveSlide, forceIt) {
-    if (!forceIt) {
-        const delta = Date.now() - lastTapTime
-        if (delta < delay1 - 5) return
-        if ((delta > delay1 + 5) && (delta < delay2 - 5)) return
-        }
-    else
-        magicSlides.forEach (slide => { 
-            if (!keepActiveSlide || (slide != activeSlide)) 
-                slide.style.display = "none"
-                })
+function hideMagicSlides (doItNow) {
+    const delta = Date.now() - lastTapTime
+    if (!doItNow && (delta < delay1)) return
+    magicSlides.forEach (slide => { 
+        if (slide != activeSlide)
+            slide.style.display = "none"
+        else if (doItNow || (delta >= delay2))
+            slide.style.display = "none"
+        })
     }
 
 function getSceneThenReact (event, domainId) {
@@ -174,8 +173,10 @@ function react (event, frames) {
     if (lastClickedI != -1)
         activateSlide (lastClickedI)
     lastTapTime = Date.now()
-    setTimeout (hideMagicSlides, delay1, true, false)
-    setTimeout (hideMagicSlides, delay2, false, false)
+
+    Date.now() - lastTapTime
+    setTimeout (hideMagicSlides, delay1+5)
+    setTimeout (hideMagicSlides, delay2+5)
     }
 
 function onSlideMouseDown (e) {
