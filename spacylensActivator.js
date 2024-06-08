@@ -12,7 +12,8 @@ export function equipImages (domainId, overrides) {
     if (overrides) {
         delay1 = overrides.delay1 || delay1
         delay2 = overrides.delay2 || delay2
-        dialog = overrides.dialog || dialog
+        tellUser = overrides.tellUser || tellUser
+        actOn = overrides.tellUser || actOn
         magicSlides = overrides.magicSlides || magicSlides
         redirectTarget = overrides.redirectTarget || redirectTarget
         inlineCSS = inlineCSS + overrides.inlineCSS
@@ -29,8 +30,6 @@ export function cleanup () {
 
 //-- Private:
 let base1 = `https://us-central1-spacybuy.cloudfunctions.net/`
-//if (import.meta.env.DEV) 
-//    console.warn ("ACTHUNG"); base1 = `http://127.0.0.1:5001/spacybuy/us-central1/`}
 const sceneAPIUrl = base1+"spacyLensScene"
 const fetchitAPIUrl = base1+`spacyLensFetchit`
 const sceneMap = new Map()
@@ -39,7 +38,7 @@ let activeSlide = null
 let lastTapTime = 0
 let onImgClick
 
-//-- Inlined config:
+//-- Inlined default behavior, use overrides to change:
 let delay1 = 1000
 let delay2 = 6000
 let redirectTarget = '_self'
@@ -110,8 +109,84 @@ let inlineCSS = `
         color: rgb(175, 93, 13)
         }
     `
-//-- Implementation:
+let tellUser = (slide, s) => {
+    slide.appendChild (dialog)
+    dialog.innerHTML = s
+    dialog.style.display = 'flex'
+    } 
+let actOn = (i, firstTap) => {
+    const frame = activeScene.frames[i]
+    const slide = magicSlides[i]
+    const ai = frame.actionIndex
+    // Get micro dialog ready to display feeback if need be:
+    if (!firstTap && (frame.actionIndex != 2)) {
+        }
+    switch (ai) {
+        case 1: // buy
+            if (firstTap) slide.innerHTML = `<span class="spacyLens_focusTag">${frame.param1}</span>`
+            else tellUser (slide, "Thank you!<br><br>Billed " + frame.param1)
+            break
+        case 2: // redirect
+            //if (firstTap) slide.innerHTML =  `<span class="spacyLens_focusTag">🔗</span>`
+            //else {
+                cleanup ()
+                if (redirectTarget === '_postParent')
+                    window.parent.postMessage(frame.param1)
+                else
+                    window.location = frame.param1 // We'll see how wix or shopify would want that. 5/21/24
+            //    }
+            break
+        case 3:  // learn
+            if (firstTap) slide.innerHTML = `<span class="spacyLens_focusTag">${frame.param1}</span>`
+            else tellUser (slide, `<span class="spacyLens_focusTag">${frame.param2}</span>`)
+            break
+        case 4: // contact someone
+            if (firstTap) slide.innerHTML =  `<span class="spacyLens_focusTag">🛎</span>`
+            else tellUser (slide, `<span class="spacyLens_focusTag">${frame.param1}</span>`)
+            break
+        case 5: // call an API
+            if (firstTap) slide.innerHTML = `<span class="spacyLens_focusTag">🔑</span>`
+            else {
+                tellUser (slide, `<span class="spacyLens_focusTag"> Calling API ...</span>`)
+                try {
+                    fetch (fetchitAPIUrl, {method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({url: frame.param2 || ''})
+                        })
+                    .then(response => {
+                        const contentType = response.headers.get('Content-Type')
+                        if (contentType.includes('json'))
+                        return response.json()
+                        else if (contentType.includes('text'))
+                        return response.text()
+                        })
+                    .then ( responseContents => {
+                        const qq = responseContents[0]
+                        const q = qq?qq.q:JSON.stringify(qq)
+                        tellUser (slide, `<span class="spacyLens_focusTag" style="font-style: italic"> ${q} </span>`)
+                        })
+                    }
+                catch (e) {
+                    tellUser (slide, `<span class="spacyLens_focusTag" style="font-size: 40px">🔑 ${e} </span>`)
+                    }
+                }
+            break
+        }
+    }    
 
+//-- Implementation:
+function activateSlide (i) {
+    const slide = magicSlides[i]
+    const firstTap = (slide != activeSlide)
+    if (firstTap && !!activeSlide) {
+        activeSlide.classList.remove ("spacyLens_activeSlide")
+        activeSlide.innerHTML = ''
+        }
+    activeSlide = slide
+    if (!slide) return
+    slide.classList.add ("spacyLens_activeSlide")
+    actOn (i, firstTap)
+    }
 function hideMagicSlides (doItNow) {
     const delta = Date.now() - lastTapTime
     if (!doItNow && (delta < delay1)) return
@@ -122,7 +197,6 @@ function hideMagicSlides (doItNow) {
             slide.style.display = "none"
         })
     }
-
 function getSceneThenReact (event, domainId) {
     const image = event.target
     const scene = sceneMap.get (image.src)
@@ -134,14 +208,11 @@ function getSceneThenReact (event, domainId) {
     if (scene) // Safari is more open to synchronous window.open if part of a click as of 5/20/24
         activateAndReact (scene)
     else // let's go async:
-        getScene (image.src, domainId)
-        .then (activateAndReact)
+        getScene (image.src, domainId).then (activateAndReact)
     }
-
 function hideDialog () {
     dialog.style.display = 'none'
     }
-
 function react (event, frames) {
     const image = event.target
     const W = image.width
@@ -178,104 +249,12 @@ function react (event, frames) {
     setTimeout (hideMagicSlides, delay1+5)
     setTimeout (hideMagicSlides, delay2+5)
     }
-
 function onSlideMouseDown (e) {
     e.stopPropagation()
     const slide = e.target
     const i = slide.dataset.spacyLensFrameI
-    if (slide === activeSlide)
-        actAndShow (activeScene.frames[i], slide)
-    else
-        activateSlide (i)
+    activateSlide (i)
     }
-
-let actAndShow = (frame, slide) => { // Perform action and show a small popup called 'dialog'
-    actOn (frame)
-    if (frame.actionIndex != 2) {
-        slide.appendChild (dialog)
-        dialog.style.display = 'flex'
-        }
-    }
-
-let actOn = frame => {
-    const ai = frame.actionIndex
-    switch (ai) {
-        case 1: // buy
-            dialog.innerHTML = "Thank you!<br><br>Billed " + frame.param1
-            break
-        case 2: // redirect
-            cleanup ()
-            if (redirectTarget === '_postParent')
-                window.parent.postMessage(frame.param1)
-            else
-                window.location = frame.param1 // We'll see how wix or shopify would want that. 5/21/24
-                //window.open(frame.param1, '_blank')
-            break
-        case 3:  // learn
-            dialog.innerHTML = `<span class="spacyLens_focusTag">${frame.param1}</span>`
-            break
-        case 4: // contact someone
-            dialog.innerHTML = `<span class="spacyLens_focusTag">${frame.param1}</span>`
-            break
-        case 5: // call an API
-            dialog.innerHTML = `<span class="spacyLens_focusTag"> Calling API ...</span>`
-            try {
-                fetch (fetchitAPIUrl, {method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({url: frame.param2 || ''})
-                    })
-                .then(response => {
-                    const contentType = response.headers.get('Content-Type')
-                    if (contentType.includes('json'))
-                    return response.json()
-                    else if (contentType.includes('text'))
-                    return response.text()
-                    })
-                .then ( responseContents => {
-                    const qq = responseContents[0]
-                    const q = qq?qq.q:JSON.stringify(qq)
-                    dialog.innerHTML = `<span class="spacyLens_focusTag" style="font-style: italic"> ${q} </span>`
-                    })
-                }
-            catch (e) {
-                dialog.innerHTML = `<span class="spacyLens_focusTag" style="font-size: 40px">🔑 ${e} </span>`
-                }
-            break
-        }
-    }
-
-function activateSlide (i) {
-    const slide = magicSlides[i]
-    if (!!activeSlide) {
-        activeSlide.classList.remove ("spacyLens_activeSlide")
-        activeSlide.innerHTML = ''
-        }
-    activeSlide = slide
-    if (!slide) return
-    slide.classList.add ("spacyLens_activeSlide")
-    const frame = activeScene.frames [i]
-    const ai = frame.actionIndex
-    switch (ai) {
-        case 1: // buy
-            slide.innerHTML = `<span class="spacyLens_focusTag">${frame.param1}</span>`
-            break
-        case 2: // redirect
-            slide.innerHTML = `<span class="spacyLens_focusTag">🔗</span>`
-            actOn (frame)
-            break 
-        case 3: // learn
-            slide.innerHTML = `<span class="spacyLens_focusTag">${frame.param1}</span>`
-            break
-        case 4: // contact
-            slide.innerHTML = `<span class="spacyLens_focusTag">🛎</span>`
-            break
-        case 5: // call API
-            slide.innerHTML = `<span class="spacyLens_focusTag">🔑</span>`
-            actAndShow (frame, slide)
-            break
-        }
-    }
-
 function getScene (src, domainId) {
     try {
         return fetch (sceneAPIUrl, {method: 'POST',
@@ -293,7 +272,6 @@ function getScene (src, domainId) {
         return Promise.resolve (mockScene)
         }
     }
-
 function fetchit (url) {
     try {
         return fetch (fetchitAPIUrl, {method: 'POST',
@@ -313,6 +291,6 @@ function fetchit (url) {
         }
     }
 
-// Warm up both backends
+//-- Warm up both backends:
 getScene ('warmup', 'bingu').then (s => console.log ("OK: " + s.title))
 fetchit ('warmup').then (r => console.log ("OK: " + r))
